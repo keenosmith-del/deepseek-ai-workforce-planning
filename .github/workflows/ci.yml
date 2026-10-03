@@ -1,0 +1,38 @@
+name: workforce-checks
+on: [push, pull_request]
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: {dotnet-version: '10.0.x'}
+      - uses: actions/setup-node@v4
+        with: {node-version: '22', cache: npm, cache-dependency-path: frontend/package-lock.json}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: dotnet build backend/Workforce.csproj --configuration Release
+      - run: npm ci && npm run lint && npm run build && npm audit --audit-level=high
+        working-directory: frontend
+      - run: pip install -r ai/requirements.txt && PYTHONPATH=ai pytest -q ai/tests
+      - run: python scripts/setup-env.py && python scripts/make-resume.py
+      - name: Validate optional deployment configuration
+        run: |
+          docker run --rm -v "$PWD/infra:/infra" -w /infra ghcr.io/opentofu/opentofu:1.9.0 fmt -check
+          docker run --rm -v "$PWD/infra:/infra" -w /infra ghcr.io/opentofu/opentofu:1.9.0 init -backend=false
+          docker run --rm -v "$PWD/infra:/infra" -w /infra ghcr.io/opentofu/opentofu:1.9.0 validate
+      - run: docker compose up -d --build
+      - name: Wait for real API
+        run: |
+          for i in $(seq 1 90); do
+            if curl -fsS http://localhost:5180/health; then exit 0; fi
+            sleep 2
+          done
+          exit 1
+      - run: python scripts/smoke.py
+      - name: Service diagnostics
+        if: failure()
+        run: docker compose logs --tail=100
+      - if: always()
+        run: docker compose down

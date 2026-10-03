@@ -1,0 +1,61 @@
+name: workforce
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: workforce
+      POSTGRES_USER: workforce
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes: ["database:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workforce -d workforce"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  storage-init:
+    image: alpine:3.21
+    user: root
+    command: ["sh", "-c", "chown 1654:1654 /data/documents && chmod 700 /data/documents"]
+    volumes: ["documents:/data/documents"]
+  ai:
+    build: ./ai
+    environment:
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY}
+      OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-deepseek-r1:1.5b}
+      EMBED_MODEL: ${EMBED_MODEL:-nomic-embed-text}
+      OLLAMA_THINK: ${OLLAMA_THINK:-false}
+      OLLAMA_THREADS: ${OLLAMA_THREADS:-4}
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+  api:
+    build: ./backend
+    environment:
+      ConnectionStrings__Database: Host=db;Database=workforce;Username=workforce;Password=${POSTGRES_PASSWORD}
+      Jwt__Key: ${JWT_KEY:?Set JWT_KEY}
+      Internal__Key: ${INTERNAL_API_KEY}
+      Intelligence__Url: http://ai:8000
+      Storage__Path: /data/documents
+      Seed__Enabled: ${SEED_ENABLED:-true}
+      Seed__Password: ${DEMO_PASSWORD:?Set DEMO_PASSWORD}
+    volumes: ["documents:/data/documents"]
+    depends_on:
+      db: {condition: service_healthy}
+      ai: {condition: service_healthy}
+      storage-init: {condition: service_completed_successfully}
+  web:
+    build: ./frontend
+    ports: ["127.0.0.1:${WEB_PORT:-5180}:80"]
+    depends_on: [api]
+  ollama:
+    image: ollama/ollama:latest
+    profiles: [models]
+    volumes: ["models:/root/.ollama"]
+volumes:
+  database:
+  documents:
+  models:

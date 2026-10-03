@@ -1,0 +1,11 @@
+# Development notes
+
+Docker Compose is the supported integrated runtime. The root `.env.example` is the central configuration contract. `backend/appsettings.example.json` and `ai/.env.example` show native-service equivalents; do not rename the backend example into a committed file containing secrets. The backend reads normal ASP.NET configuration environment names (`Jwt__Key`, `ConnectionStrings__Database`, etc.). Uvicorn reads exported variables; it does not automatically load `ai/.env.example`.
+
+Change UI screens in `frontend/src/main.tsx` and their shared API types in `frontend/src/api.ts`. Business permissions and persistence are always enforced in the C# controllers and services. AI never writes to PostgreSQL directly. Its internal API key is not exposed in browser assets. File uploads are streamed to the API and bounded before passing bytes to FastAPI; metadata and files survive service restarts in volumes.
+
+EF migrations are applied before the worker starts. The design-time factory avoids requiring service secrets when generating migrations. `SkillVectors` is a custom EF migration for PostgreSQL extension/vector/index DDL; semantic queries use parameterized Npgsql commands. Never concatenate a vector query from user SQL. The embedding model name is stored beside each vector and included in retrieval filters.
+
+The full inference path deliberately uses short opaque references in prompts, then expands them back to persisted fact/skill UUIDs and validates exact membership. Requirement keys and array sizes are bounded by the JSON grammar, preventing open-ended generation. Schema constraints do not establish truth: the validator independently rejects duplicates and wrong/omitted evidence. Explanation templates describe only evidence state and human-entered proficiency. Choosing a more capable DeepSeek model changes latency/output reliability, not the authorization or grounding policy.
+
+A new versioned analysis is saved only when genuine Ollama inference and validation both succeed. Failed responses are not stored as successful analyses, and no deterministic fallback is presented as AI. Background retries are visible; the user may fix model configuration or retry manually. Requests should never silently advance an application or reuse stale analyses after source corrections.

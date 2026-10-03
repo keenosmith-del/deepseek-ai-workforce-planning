@@ -1,0 +1,7 @@
+docker_host = "unix:///var/run/docker.sock"
+project_root = "/absolute/path/deepseek-ai-workforce-planning"
+database_password = "replace-me"
+jwt_key = "replace-with-32-or-more-random-characters"
+internal_key = "replace-me"
+ollama_url = "http://host.docker.internal:11434"
+web_port = 5180
